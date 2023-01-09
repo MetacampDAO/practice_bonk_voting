@@ -9,6 +9,52 @@ import {
 import { assert } from "chai";
 import { BonkVote } from "../target/types/bonk_vote";
 
+const airdrop1Sol = async (
+  program: anchor.Program<BonkVote>,
+  pubkey: web3.PublicKey
+) => {
+  await program.provider.connection.confirmTransaction(
+    await program.provider.connection.requestAirdrop(pubkey, 1e9)
+  );
+};
+
+const createAta = async (
+  program: anchor.Program<BonkVote>,
+  pubkey: web3.Keypair,
+  mint: web3.PublicKey
+) => {
+  return await createAssociatedTokenAccount(
+    program.provider.connection,
+    pubkey,
+    mint,
+    pubkey.publicKey
+  );
+};
+
+const getGlobalCounter = (program: anchor.Program<BonkVote>) => {
+  const [globalState, _globalStateBump] = web3.PublicKey.findProgramAddressSync(
+    [Buffer.from(anchor.utils.bytes.utf8.encode("global"))],
+    program.programId
+  );
+  return globalState;
+};
+
+const getPair = (
+  program: anchor.Program<BonkVote>,
+  A_NAME: string,
+  B_NAME: string
+) => {
+  const [pair, _pairBump] = web3.PublicKey.findProgramAddressSync(
+    [
+      Buffer.from(anchor.utils.bytes.utf8.encode("pair")),
+      Buffer.from(anchor.utils.bytes.utf8.encode(A_NAME)),
+      Buffer.from(anchor.utils.bytes.utf8.encode(B_NAME)),
+    ],
+    program.programId
+  );
+  return pair;
+};
+
 describe("bonk_vote", () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -31,12 +77,8 @@ describe("bonk_vote", () => {
   let voterBonkAta: web3.PublicKey | null;
 
   it("Setup devnet env", async () => {
-    await program.provider.connection.confirmTransaction(
-      await program.provider.connection.requestAirdrop(developer.publicKey, 1e9)
-    );
-    await program.provider.connection.confirmTransaction(
-      await program.provider.connection.requestAirdrop(voter.publicKey, 1e9)
-    );
+    await airdrop1Sol(program, developer.publicKey);
+    await airdrop1Sol(program, voter.publicKey);
 
     bonkTestMint = await createMint(
       program.provider.connection,
@@ -47,21 +89,11 @@ describe("bonk_vote", () => {
     );
     console.log(`Creating Mint: ${bonkTestMint}`);
 
-    developerBonkAta = await createAssociatedTokenAccount(
-      program.provider.connection,
-      developer,
-      bonkTestMint,
-      developer.publicKey
-    );
+    developerBonkAta = await createAta(program, developer, bonkTestMint);
+    voterBonkAta = await createAta(program, voter, bonkTestMint);
 
     console.log(`Developer Ata: ${developerBonkAta}`);
-
-    voterBonkAta = await createAssociatedTokenAccount(
-      program.provider.connection,
-      voter,
-      bonkTestMint,
-      voter.publicKey
-    );
+    console.log(`Voter Ata: ${voterBonkAta}`);
 
     await mintTo(
       program.provider.connection,
@@ -71,16 +103,10 @@ describe("bonk_vote", () => {
       voter.publicKey,
       1e9
     );
-
-    console.log(`Voter Ata: ${voterBonkAta}`);
   });
 
   it("Initialized global state", async () => {
-    const [globalState, _globalStateBump] =
-      web3.PublicKey.findProgramAddressSync(
-        [Buffer.from(anchor.utils.bytes.utf8.encode("global"))],
-        program.programId
-      );
+    const globalState = getGlobalCounter(program);
 
     // Add your test here.
     const tx = await program.methods
@@ -101,14 +127,7 @@ describe("bonk_vote", () => {
   });
 
   it("Initialized pair", async () => {
-    const [pair, _pairBump] = web3.PublicKey.findProgramAddressSync(
-      [
-        Buffer.from(anchor.utils.bytes.utf8.encode("pair")),
-        Buffer.from(anchor.utils.bytes.utf8.encode(A_NAME)),
-        Buffer.from(anchor.utils.bytes.utf8.encode(B_NAME)),
-      ],
-      program.programId
-    );
+    const pair = getPair(program, A_NAME, B_NAME);
 
     // Add your test here.
     const tx = await program.methods
@@ -130,20 +149,8 @@ describe("bonk_vote", () => {
   });
 
   it("Vote for a", async () => {
-    const [globalState, _globalStateBump] =
-      web3.PublicKey.findProgramAddressSync(
-        [Buffer.from(anchor.utils.bytes.utf8.encode("global"))],
-        program.programId
-      );
-
-    const [pair, _pairBump] = web3.PublicKey.findProgramAddressSync(
-      [
-        Buffer.from(anchor.utils.bytes.utf8.encode("pair")),
-        Buffer.from(anchor.utils.bytes.utf8.encode(A_NAME)),
-        Buffer.from(anchor.utils.bytes.utf8.encode(B_NAME)),
-      ],
-      program.programId
-    );
+    const globalState = getGlobalCounter(program);
+    const pair = getPair(program, A_NAME, B_NAME);
 
     // Add your test here.
     try {
